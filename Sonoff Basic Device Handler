@@ -14,10 +14,17 @@
  *
  */
 metadata {
-	definition (name: "Sonoff Basic (Tasmota)", namespace: "mhutchy", author: "Mark Hutchings", ocfDeviceType: "oic.d.smartplug") {
+	definition (name: "Sonoff Basic - Tasmota", namespace: "mhutchy", author: "Mark Hutchings", mnmn: "SmartThings", vid: "generic-switch") {
 		capability "Momentary"
 		capability "Switch"
         capability "Refresh"
+        
+        attribute "FriendlyName" , "string"
+        attribute "Uptime" , "string"
+        attribute "Version" , "string"
+        attribute "Hostname" , "string"
+        attribute "Mac" , "string"
+                 
         
         command "reload"
         command "updateStatus"
@@ -42,7 +49,7 @@ metadata {
     
  preferences {
         
-        input(name: "ipAddress", type: "string", title: "IP Address", description: "IP Address of Sonoff", displayDuringSetup: true, required: true)
+        input(name: "2R", type: "bool", title: "2R", description: "Is the device fitted a 2R?", displayDuringSetup: true, required: true)
 
 		}
 
@@ -66,10 +73,12 @@ metadata {
 
 
 def installed(){
+	updateDetails()
     initialise()
 }
 
 def updated(){
+	updateDetails()
     initialise()
 }
 
@@ -80,12 +89,20 @@ def initialise(){
   // You can remove this if you do not need updates, ie if the device state is not changed
   // outside of smartthings (by a switch, the Sonoff push button etc)
    runEvery1Minute(update)
+   runEvery10Minutes(updateDetails)
 }	
     
 
+def updateDetails(){
+	//log.debug "$device.displayName detailed update"
+    action("status%200")
+    
+    }
+
 def update(){
 	//log.debug "$device.displayName refreshing status"
-    action("Status")
+   action("power1")
+    
     }
 
 def scheduled (){
@@ -99,17 +116,17 @@ def parse(){
     }
 
 def push() {
-	action("Power%20Toggle")
+	action("Power1%20Toggle")
     runIn (5, update)
 	}
 
 def on() {
-	action ("Power%20On")
+	action ("Power1%20On")
     runIn (5, update)
     }
 
 def off() {
-	action("Power%20Off")
+	action("Power1%20Off")
     runIn (5, update)
 }
 
@@ -119,12 +136,12 @@ def refresh() {
 
 
 //action - Sends command to Sonoff
-//based on code found here https://community.smartthings.com/t/any-httpget-smatapps-or-code-anywhere/117945/4
+
 def action(option)
 	{
-	log.debug "Sending command : '${option}' to $device.displayName at IP:${ipAddress}"
+	//log.debug "Sending command : '${option}' to $device.displayName at IP:${device.deviceNetworkId}"
     
-    def theAction = new physicalgraph.device.HubAction("""GET /cm?cmnd=${option} HTTP/1.1\r\n Accept: */*\r\nHOST: ${ipAddress}:80\r\n\r\n""", physicalgraph.device.Protocol.LAN, "${ipAddress}:80", [callback: calledBackHandler])
+    def theAction = new physicalgraph.device.HubAction("""GET /cm?cmnd=${option} HTTP/1.1\r\n Accept: */*\r\nHOST: ${device.deviceNetworkId}:80\r\n\r\n""", physicalgraph.device.Protocol.LAN, "${device.deviceNetworkId}:80", [callback: calledBackHandler])
 
     sendHubCommand(theAction)
     
@@ -139,23 +156,46 @@ void calledBackHandler(physicalgraph.device.HubResponse hubResponse)
   //If you want to add more status information then details can be found at https://github.com/arendst/Sonoff-Tasmota/wiki/Commands
   
   state.status = hubResponse.body 
-   //log.debug "$device.displayName responded with '$state.status'"
+ //log.debug "$device.displayName responded with '$state.status'"
    def reportedState
    if (state.status == """{"POWER":"ON"}""") {
         reportedState = "on"}
-   else     
+   else
+      if (state.status == """{"POWER1":"ON"}""") {
+        reportedState = "on"}
+   else 
    if (state.status == """{"POWER":"OFF"}""") {
+     reportedState = "off"}
+        else 
+   if (state.status == """{"POWER1":"OFF"}""") {
      reportedState = "off"}
    else {
    		def msg = new groovy.json.JsonSlurper().parseText(hubResponse.body)  
    		def SonoffPower = msg.Status.Power
-        //log.debug "$device.displayName power status is $SonoffPower"
+        def SonoffFriendlyName = msg.Status.FriendlyName
+        def SonoffUptime = msg.StatusPRM.Uptime
+        def SonoffVersion = msg.StatusFWR.Version
+        def SonoffHostname = msg.StatusNET.Hostname
+        def SonoffIPAddress = msg.StatusNET.IPAddress
+        def SonoffMac = msg.StatusNET.Mac
+        def SonoffLocal = msg.StatusTIM.Local
+        def SonoffSleepMode = msg.StatusSTS.SleepMode
+        def SonoffSleep = msg.StatusSTS.Sleep
+                        
+           
+        sendEvent(name: "FriendlyName", value: "$SonoffFriendlyName")
+   		sendEvent(name: "Uptime", value: "$SonoffUptime")
+        sendEvent(name: "Version", value: "$SonoffVersion")
+        sendEvent(name: "Hostname", value: "$SonoffHostname")
+        sendEvent(name: "Mac", value: "$SonoffMac")
+        
         if (SonoffPower == 1) {reportedState = "on"} else {reportedState = "off"}
+        log.debug "$device.displayName updated: FriendlyName:${SonoffFriendlyName} Uptime: ${SonoffUptime} Time: ${SonoffLocal} Version: ${SonoffVersion} HostName: ${SonoffHostname} MAC: ${SonoffMac} SleepMode: ${SonoffSleepMode}"
         }
    
    
    sendEvent(name: "switch", value: reportedState)
-   //log.debug "$device.displayName status set to $reportedState"  
+
      
    sendEvent(name: "refresh", value: "active")
      
@@ -166,6 +206,4 @@ log.debug "$device.displayName is $SwitchState"
 
 
 //all status information can be found here https://github.com/arendst/Sonoff-Tasmota/wiki/Commands
-
-
 
