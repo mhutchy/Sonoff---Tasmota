@@ -24,7 +24,7 @@ metadata {
         attribute "Version" , "string"
         attribute "Hostname" , "string"
         attribute "Mac" , "string"
-                 
+                
         
         command "reload"
         command "updateStatus"
