@@ -24,6 +24,7 @@ metadata {
         attribute "Version" , "string"
         attribute "Hostname" , "string"
         attribute "Mac" , "string"
+        attribute "ip" , "string"
                  
         
         command "reload"
@@ -40,6 +41,11 @@ metadata {
 				attributeState "turningOff", label:'${name}', action:"switch.on", icon:"st.switches.light.off", backgroundColor:"#ffffff", nextState:"turningOn"
 			}
 		}
+        
+		valueTile("ip", "device.ip", decoration: "flat", width: 5, height: 1) {
+			state "default", label:'IP : ${currentValue}'
+		}
+        
 		standardTile("refresh", "device.refresh", inactiveLabel: false, decoration: "flat", width: 2, height: 2) {
 			state "default", label:"", action:"refresh.refresh", icon:"st.secondary.refresh"
 		}
@@ -47,7 +53,7 @@ metadata {
 			state "default", label:"Toggle", action:"momentary.push"
 		}
 		main "switch"
-		details(["switch", "refresh", "momentary"])
+		details(["switch","ip", "refresh", "momentary"])
 	}
     
  
@@ -103,6 +109,8 @@ def initialise(){
   // as the sonoff doesn't send parse information we need to ask for updates every minute
   // You can remove this if you do not need updates, ie if the device state is not changed
   // outside of smartthings (by a switch, the Sonoff push button etc)
+   
+   action ("WebPassword%20$password")
    action ("setoption31%20On")
    runEvery1Minute(update)
    runEvery10Minutes(updateDetails)
@@ -219,6 +227,7 @@ void calledBackHandler(physicalgraph.device.HubResponse hubResponse)
         sendEvent(name: "Version", value: "$SonoffVersion")
         sendEvent(name: "Hostname", value: "$SonoffHostname")
         sendEvent(name: "Mac", value: "$SonoffMac")
+        sendEvent(name: "ip", value: "$SonoffIPAddress")
         
         if (SonoffPower == 1) {reportedState = "on"} else {reportedState = "off"}
             if (detailedLog) {log.debug "$device.displayName updated: FriendlyName:${SonoffFriendlyName} Uptime: ${SonoffUptime} Time: ${SonoffLocal} Version: ${SonoffVersion} HostName: ${SonoffHostname} MAC: ${SonoffMac} SleepMode: ${SonoffSleepMode}"}
