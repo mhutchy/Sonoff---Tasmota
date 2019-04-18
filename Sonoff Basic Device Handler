@@ -24,7 +24,7 @@ metadata {
         attribute "Version" , "string"
         attribute "Hostname" , "string"
         attribute "Mac" , "string"
-                
+                 
         
         command "reload"
         command "updateStatus"
@@ -43,16 +43,31 @@ metadata {
 		standardTile("refresh", "device.refresh", inactiveLabel: false, decoration: "flat", width: 2, height: 2) {
 			state "default", label:"", action:"refresh.refresh", icon:"st.secondary.refresh"
 		}
+        standardTile("momentary", "device.momentary", inactiveLabel: false, decoration: "flat", width: 2, height: 2) {
+			state "default", label:"Toggle", action:"momentary.push"
+		}
 		main "switch"
-		details(["switch", "refresh"])
+		details(["switch", "refresh", "momentary"])
 	}
     
+ 
+ 
  preferences {
+ 
+     section ("Authentication, user is hardcoded as admin"){   
+     	input "password", "string", title: "Password (if used)", multiple: false, required: false
+         }
+
+	section ("Device preferences"){
+
+ 		input description: "In normal opperation the Sonoff will only report status changes (On/Off) in the event logger. If more detailed logging is required for fault finding then detailed logging should be switched on", type: "paragraph", element: "paragraph", title: "Logging"
+        input(name: "detailedLog", type: "bool", title: "Detailed logging", description: "Detailed logging", displayDuringSetup: true, required: true)
         
+        input description: "If this Sonoff is a 2 output device then the option below should be enabled, this device handler will opperate the 1st relay, a 2R handler is need for the 2nd relay", type: "paragraph", element: "paragraph", title: "2R"
         input(name: "2R", type: "bool", title: "2R", description: "Is the device fitted a 2R?", displayDuringSetup: true, required: true)
 
 		}
-
+}
 
 	simulator { 
 		// TODO: define status and reply messages here
@@ -88,25 +103,28 @@ def initialise(){
   // as the sonoff doesn't send parse information we need to ask for updates every minute
   // You can remove this if you do not need updates, ie if the device state is not changed
   // outside of smartthings (by a switch, the Sonoff push button etc)
+   action ("setoption31%20On")
    runEvery1Minute(update)
    runEvery10Minutes(updateDetails)
+   
 }	
     
 
 def updateDetails(){
-	//log.debug "$device.displayName detailed update"
+	if (detailedLog) {log.debug "$device.displayName detailed update"}
     action("status%200")
+    
     
     }
 
 def update(){
-	//log.debug "$device.displayName refreshing status"
+	if (detailedLog) {log.debug "$device.displayName refreshing status"}
    action("power1")
     
     }
 
 def scheduled (){
-	log.debug "$device.displayName scheduled handler"
+	if (detailedLog) {log.debug "$device.displayName scheduled handler"}
     }
 
 def parse(){
@@ -116,21 +134,26 @@ def parse(){
     }
 
 def push() {
+	if (detailedLog) {log.debug "$device.displayName push command received, status: switch - ${device.currentValue("switch")}, Momentary - ${device.currentValue("momentary")}"}
 	action("Power1%20Toggle")
     runIn (5, update)
 	}
 
 def on() {
+	if (detailedLog) {log.debug "$device.displayName on command received, status: switch - ${device.currentValue("switch")}, Momentary - ${device.currentValue("momentary")}"}
 	action ("Power1%20On")
     runIn (5, update)
     }
 
 def off() {
+	if (detailedLog) {log.debug "$device.displayName off command received, status: switch - ${device.currentValue("switch")}, Momentary - ${device.currentValue("momentary")}"}
 	action("Power1%20Off")
     runIn (5, update)
 }
 
 def refresh() {
+	if (detailedLog) {log.debug "$device.displayName refresh command received"}
+    if (detailedLog) {log.debug "$device.displayName status: switch - ${device.currentValue("switch")}, Momentary - ${device.currentValue("momentary")}"}
 	update()
     }
 
@@ -139,8 +162,12 @@ def refresh() {
 
 def action(option)
 	{
-	//log.debug "Sending command : '${option}' to $device.displayName at IP:${device.deviceNetworkId}"
-    
+	
+    //add password if not blank
+    if (password){
+			option += "&user=admin&password=${password}"
+		}
+    if (detailedLog) {log.debug "Sending command : '${option}' to $device.displayName at IP:${device.deviceNetworkId}"}
     def theAction = new physicalgraph.device.HubAction("""GET /cm?cmnd=${option} HTTP/1.1\r\n Accept: */*\r\nHOST: ${device.deviceNetworkId}:80\r\n\r\n""", physicalgraph.device.Protocol.LAN, "${device.deviceNetworkId}:80", [callback: calledBackHandler])
 
     sendHubCommand(theAction)
@@ -156,7 +183,7 @@ void calledBackHandler(physicalgraph.device.HubResponse hubResponse)
   //If you want to add more status information then details can be found at https://github.com/arendst/Sonoff-Tasmota/wiki/Commands
   
   state.status = hubResponse.body 
- //log.debug "$device.displayName responded with '$state.status'"
+      if (detailedLog) {log.debug "$device.displayName responded with '$state.status'"}
    def reportedState
    if (state.status == """{"POWER":"ON"}""") {
         reportedState = "on"}
@@ -169,6 +196,10 @@ void calledBackHandler(physicalgraph.device.HubResponse hubResponse)
         else 
    if (state.status == """{"POWER1":"OFF"}""") {
      reportedState = "off"}
+   else
+   if (state.status == """{"SetOption31":"ON"}""") {
+     log.debug "$device.displayName LED blink on WiFi error disabled"}
+   
    else {
    		def msg = new groovy.json.JsonSlurper().parseText(hubResponse.body)  
    		def SonoffPower = msg.Status.Power
@@ -190,18 +221,24 @@ void calledBackHandler(physicalgraph.device.HubResponse hubResponse)
         sendEvent(name: "Mac", value: "$SonoffMac")
         
         if (SonoffPower == 1) {reportedState = "on"} else {reportedState = "off"}
-        log.debug "$device.displayName updated: FriendlyName:${SonoffFriendlyName} Uptime: ${SonoffUptime} Time: ${SonoffLocal} Version: ${SonoffVersion} HostName: ${SonoffHostname} MAC: ${SonoffMac} SleepMode: ${SonoffSleepMode}"
+            if (detailedLog) {log.debug "$device.displayName updated: FriendlyName:${SonoffFriendlyName} Uptime: ${SonoffUptime} Time: ${SonoffLocal} Version: ${SonoffVersion} HostName: ${SonoffHostname} MAC: ${SonoffMac} SleepMode: ${SonoffSleepMode}"}
         }
    
-   
-   sendEvent(name: "switch", value: reportedState)
-
+   def currentState = device.currentValue("switch")
+   if (reportedState){
+   		sendEvent(name: "switch", value: reportedState)
+	}
      
    sendEvent(name: "refresh", value: "active")
-     
+   
+   
+   
    def SwitchState = device.currentValue("switch")
    
-log.debug "$device.displayName is $SwitchState"
+   //if switch state has changed then output to logger
+   if ((SwitchState != currentState) && (SwitchState)) {
+		log.debug "$device.displayName at $device.deviceNetworkId turned $SwitchState"
+   }
 }
 
 
