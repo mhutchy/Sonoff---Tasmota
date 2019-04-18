@@ -192,8 +192,14 @@ void calledBackHandler(physicalgraph.device.HubResponse hubResponse)
   
   state.status = hubResponse.body 
       if (detailedLog) {log.debug "$device.displayName responded with '$state.status'"}
-   def reportedState
-   if (state.status == """{"POWER":"ON"}""") {
+      def reportedState
+      
+      if (state.status == """{"WARNING":"Need user=<username>&password=<password>"}""") {
+      		log.error "$device.displayName (${device.deviceNetworkId}) password failure"
+            }
+   
+   else 
+   	if (state.status == """{"POWER":"ON"}""") {
         reportedState = "on"}
    else
       if (state.status == """{"POWER1":"ON"}""") {
