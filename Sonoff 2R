@@ -1,0 +1,197 @@
+/**
+ *  Sonoff 2R (2nd output)
+ *
+ *  Copyright 2019 Mark Hutchings
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ *  in compliance with the License. You may obtain a copy of the License at:
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
+ *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
+ *  for the specific language governing permissions and limitations under the License.
+ *
+ */
+metadata {
+	definition (name: "Sonoff 2R (2nd output)", namespace: "mhutchy", author: "Mark Hutchings") {
+	
+		capability "Momentary"
+		capability "Switch"
+        capability "Refresh"
+        
+        attribute "FriendlyName" , "string"
+        attribute "Uptime" , "string"
+        attribute "Version" , "string"
+        attribute "Hostname" , "string"
+        attribute "Mac" , "string"
+                 
+        
+        command "reload"
+        command "updateStatus"
+	}
+    
+    // UI tile definitions
+	tiles(scale: 2) {
+		multiAttributeTile(name:"switch", type: "generic", width: 6, height: 4, canChangeIcon: true){
+			tileAttribute ("device.switch", key: "PRIMARY_CONTROL") {
+				attributeState "on", label:'${name}', action:"switch.off", icon:"st.switches.light.on", backgroundColor:"#00A0DC", nextState:"turningOff"
+				attributeState "off", label:'${name}', action:"switch.on", icon:"st.switches.light.off", backgroundColor:"#ffffff", nextState:"turningOn"
+				attributeState "turningOn", label:'${name}', action:"switch.off", icon:"st.switches.light.on", backgroundColor:"#00A0DC", nextState:"turningOff"
+				attributeState "turningOff", label:'${name}', action:"switch.on", icon:"st.switches.light.off", backgroundColor:"#ffffff", nextState:"turningOn"
+			}
+		}
+		standardTile("refresh", "device.refresh", inactiveLabel: false, decoration: "flat", width: 2, height: 2) {
+			state "default", label:"", action:"refresh.refresh", icon:"st.secondary.refresh"
+		}
+		main "switch"
+		details(["switch", "refresh"])
+	}
+    
+ preferences {
+        
+        input(name: "ipAddress", type: "string", title: "IP Address", description: "IP Address of Sonoff", displayDuringSetup: true, required: true)
+
+		}
+
+
+	simulator { 
+		// TODO: define status and reply messages here
+	}
+
+
+}
+
+// parse events into attributes
+
+
+  //  Sonoff doesn't send any data so parse does not work
+
+
+
+// handle commands
+
+
+
+def installed(){
+	update()
+    action("status%200")
+}
+
+def updated(){
+	update()
+    action("status%200")
+}
+
+def initialise(){
+	log.debug "$device.displayName initialising"
+  
+  // as the sonoff doesn't send parse information we need to ask for updates every minute
+  // You can remove this if you do not need updates, ie if the device state is not changed
+  // outside of smartthings (by a switch, the Sonoff push button etc)
+   runEvery1Minute(update)
+}	
+    
+
+def update(){
+	//log.debug "$device.displayName refreshing status"
+    action("Power2")
+    
+    }
+
+def scheduled (){
+	log.debug "$device.displayName scheduled handler"
+    }
+
+def parse(){
+// If future versions of Tasmota support parsing
+	log.debug "$device.displayName Parsing"
+    log.debug "description: $description"
+    }
+
+def push() {
+	action("Power2%20Toggle")
+    runIn (5, update)
+	}
+
+def on() {
+	action ("Power2%20On")
+    runIn (5, update)
+    }
+
+def off() {
+	action("Power2%20Off")
+    runIn (5, update)
+}
+
+def refresh() {
+	update()
+    }
+
+
+//action - Sends command to Sonoff
+//based on code found here https://community.smartthings.com/t/any-httpget-smatapps-or-code-anywhere/117945/4
+def action(option)
+	{
+	log.debug "Sending command : '${option}' to $device.displayName at IP:${ipAddress}"
+    
+    def theAction = new physicalgraph.device.HubAction("""GET /cm?cmnd=${option} HTTP/1.1\r\n Accept: */*\r\nHOST: ${ipAddress}:80\r\n\r\n""", physicalgraph.device.Protocol.LAN, "${ipAddress}:80", [callback: calledBackHandler])
+
+    sendHubCommand(theAction)
+    
+
+}
+
+void calledBackHandler(physicalgraph.device.HubResponse hubResponse)
+{
+  //treating data received back from sonoff
+  //when power command used a one line power on or power off is reveived
+  //when status is used then a list of data is receievd, all we are interseted in is the power information
+  //If you want to add more status information then details can be found at https://github.com/arendst/Sonoff-Tasmota/wiki/Commands
+  
+  state.status = hubResponse.body 
+ //log.debug "$device.displayName responded with '$state.status'"
+   def reportedState
+   if (state.status == """{"POWER2":"ON"}""") {
+        reportedState = "on"}
+   else     
+   if (state.status == """{"POWER2":"OFF"}""") {
+     reportedState = "off"}
+   else {
+   		def msg = new groovy.json.JsonSlurper().parseText(hubResponse.body)  
+   		def SonoffPower = msg.Status.Power2
+        def SonoffFriendlyName = msg.Status.FriendlyName
+        def SonoffUptime = msg.StatusPRM.Uptime
+        def SonoffVersion = msg.StatusFWR.Version
+        def SonoffHostname = msg.StatusNET.Hostname
+        def SonoffIPAddress = msg.StatusNET.IPAddress
+        def SonoffMac = msg.StatusNET.Mac
+        def SonoffLocal = msg.StatusTIM.Local
+        def SonoffSleepMode = msg.StatusSTS.SleepMode
+        def SonoffSleep = msg.StatusSTS.Sleep
+                        
+           
+        sendEvent(name: "FriendlyName", value: "$SonoffFriendlyName")
+   		sendEvent(name: "Uptime", value: "$SonoffUptime")
+        sendEvent(name: "Version", value: "$SonoffVersion")
+        sendEvent(name: "Hostname", value: "$SonoffHostname")
+        sendEvent(name: "Mac", value: "$SonoffMac")
+        
+        if (SonoffPower == 1) {reportedState = "on"} else {reportedState = "off"}
+        log.debug "$device.displayName updated: FriendlyName:${SonoffFriendlyName} Uptime: ${SonoffUptime} Time: ${SonoffLocal} Version: ${SonoffVersion} HostName: ${SonoffHostname} MAC: ${SonoffMac} SleepMode: ${SonoffSleepMode}"
+        }
+   
+   
+   sendEvent(name: "switch", value: reportedState)
+
+     
+   sendEvent(name: "refresh", value: "active")
+     
+   def SwitchState = device.currentValue("switch")
+   
+log.debug "$device.displayName is $SwitchState"
+}
+
+
+//all status information can be found here https://github.com/arendst/Sonoff-Tasmota/wiki/Commands
+
