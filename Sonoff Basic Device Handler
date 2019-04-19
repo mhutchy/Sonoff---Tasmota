@@ -25,6 +25,7 @@ metadata {
         attribute "Hostname" , "string"
         attribute "Mac" , "string"
         attribute "ip" , "string"
+        attribute "authentication" , "string"
                  
         
         command "reload"
@@ -42,9 +43,12 @@ metadata {
 			}
 		}
         
-		valueTile("ip", "device.ip", decoration: "flat", width: 5, height: 1) {
+		valueTile("ip", "device.ip", decoration: "flat", width: 4, height: 1) {
 			state "default", label:'IP : ${currentValue}'
 		}
+        standardTile ("authentication", "device.authentication", decoration: "flat", width: 2, height: 1) {
+        	state "default", label:'authentication ${currentValue}'
+            }
         
 		standardTile("refresh", "device.refresh", inactiveLabel: false, decoration: "flat", width: 2, height: 2) {
 			state "default", label:"", action:"refresh.refresh", icon:"st.secondary.refresh"
@@ -53,7 +57,7 @@ metadata {
 			state "default", label:"Toggle", action:"momentary.push"
 		}
 		main "switch"
-		details(["switch","ip", "refresh", "momentary"])
+		details(["switch","ip", "authentication", "refresh", "momentary"])
 	}
     
  
@@ -65,6 +69,11 @@ metadata {
          }
 
 	section ("Device preferences"){
+
+ 		input(name: "setName", type: "bool", title: "Change Sonoff's hostName and friendly name to match Device Name", displayDuringSetup: true, required: false)
+        input(name: "stopBlink", type: "bool", title: "Disable LED blink when Sonoff WiFi low", displayDuringSetup: true, required: false)
+    	
+        
 
  		input description: "In normal opperation the Sonoff will only report status changes (On/Off) in the event logger. If more detailed logging is required for fault finding then detailed logging should be switched on", type: "paragraph", element: "paragraph", title: "Logging"
         input(name: "detailedLog", type: "bool", title: "Detailed logging", description: "Detailed logging", displayDuringSetup: true, required: true)
@@ -106,12 +115,26 @@ def updated(){
 def initialise(){
 	log.debug "$device.displayName initialising"
   
+
+   
+   if (setName) {
+   		def sonoffName = device.displayName.replaceAll(' ','_') 
+        log.debug "$device.displayName - Sonoff name set to $sonoffName"
+   		action ("hostname%20$sonoffName")
+        action ("friendlyname%20$sonoffName")
+        }
+   
+   if (password){
+   		action ("WebPassword%20$password")
+        }
+   
+   if (stopBlink) {
+   	action ("setoption31%20On")
+    }
+    
   // as the sonoff doesn't send parse information we need to ask for updates every minute
   // You can remove this if you do not need updates, ie if the device state is not changed
-  // outside of smartthings (by a switch, the Sonoff push button etc)
-   
-   action ("WebPassword%20$password")
-   action ("setoption31%20On")
+  // outside of smartthings (by a switch, the Sonoff push button etc)   
    runEvery1Minute(update)
    runEvery10Minutes(updateDetails)
    
@@ -196,9 +219,12 @@ void calledBackHandler(physicalgraph.device.HubResponse hubResponse)
       
       if (state.status == """{"WARNING":"Need user=<username>&password=<password>"}""") {
       		log.error "$device.displayName (${device.deviceNetworkId}) password failure"
+            sendEvent(name: "authentication", value: 'FAILED')
             }
+      else {sendEvent(name: "authentication", value: 'ok')
+      }
    
-   else 
+    
    	if (state.status == """{"POWER":"ON"}""") {
         reportedState = "on"}
    else
@@ -214,7 +240,10 @@ void calledBackHandler(physicalgraph.device.HubResponse hubResponse)
    if (state.status == """{"SetOption31":"ON"}""") {
      log.debug "$device.displayName LED blink on WiFi error disabled"}
    
-   else {
+   else
+   if (state.status.contains ('Status'))
+   
+   {
    		def msg = new groovy.json.JsonSlurper().parseText(hubResponse.body)  
    		def SonoffPower = msg.Status.Power
         def SonoffFriendlyName = msg.Status.FriendlyName
